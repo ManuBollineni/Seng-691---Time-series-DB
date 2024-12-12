@@ -1,0 +1,73 @@
+RULE:- 
+SQL code while ceating rule in emqx to connect Kafka 
+SELECT
+    payload.sensor AS sensor_name,
+    payload.temperature AS temperature_value,
+    payload.humidity AS humidity_value,
+    payload.timestamp AS event_time
+FROM
+    "test-in"
+
+URL for EMQX enterprise:
+http://localhost:18083/
+
+URL for INFLUX DB:
+http://localhost:8086/
+
+Commands to Start Kafka and Create/Consume Topics
+1. Start Zookeeper
+zsh
+Copy code
+bin/zookeeper-server-start.sh config/zookeeper.properties
+2. Start Kafka Server
+zsh
+Copy code
+bin/kafka-server-start.sh config/server.properties
+3. Create a Topic
+zsh
+Copy code
+bin/kafka-topics.sh --create --topic test-in --replication-factor 1 --partitions 3 --bootstrap-server localhost:9092
+4. Describe the Existing Topic
+zsh
+Copy code
+bin/kafka-topics.sh --describe --topic test-in --bootstrap-server localhost:9092
+5. Run a Kafka Consumer
+zsh
+Copy code
+bin/kafka-console-consumer.sh --topic test-in --bootstrap-server localhost:9092
+
+
+General Query:
+from(bucket: "MQTT_Bucket_2")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => r["_measurement"] == "kafka_consumer")
+  |> filter(fn: (r) => r["_field"] == "humidity_value" or r["_field"] == "temperature_value")
+  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
+  |> yield(name: "mean")
+
+Query 1 which is for average for 5 minutes
+from(bucket: "MQTT_Bucket_2")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => r["_measurement"] == "kafka_consumer")
+  |> filter(fn: (r) => r["_field"] == "humidity_value" or r["_field"] == "temperature_value")
+  |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
+  |> yield(name: "mean")
+
+Query 3a For Daily average or offline
+from(bucket: "MQTT_Bucket_2")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r["_measurement"] == "kafka_consumer")
+  |> filter(fn: (r) => r["_field"] == "temperature_value" or r["_field"] == "humidity_value")
+  |> filter(fn: (r) => r["host"] == "Teja_M")
+  |> aggregateWindow(every: 1d, fn: mean, createEmpty: false)
+  |> yield(name: "daily_mean")
+
+
+Query 3b For Rolling Average
+from(bucket: "MQTT_Bucket_2")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r["_measurement"] == "kafka_consumer")
+  |> filter(fn: (r) => r["_field"] == "temperature_value")
+  |> filter(fn: (r) => r["host"] == "Teja_M")
+  |> movingAverage(n: 12)
+  |> yield(name: "rolling_average")
