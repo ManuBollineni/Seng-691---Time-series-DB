@@ -1,0 +1,92 @@
+#include <WiFi.h>
+#include <ArduinoMqttClient.h>
+#include "DHT.h"
+#include <ArduinoJson.h>
+
+// Wi-Fi credentials
+const char* ssid = "Raigad";
+const char* password = "Shivaji@123";
+
+// Local Mosquitto MQTT broker details
+const char* mqtt_server = "192.168.68.84";//"192.168.68.97"; // Localhost IP for Mosquitto
+const int mqtt_port = 1883; // Default port for Mosquitto
+const char* mqtt_topic = "test-in";
+
+// DHT sensor configuration
+#define DHTPIN 2          // DHT11 data pin connected to Digital Pin 2
+#define DHTTYPE DHT11     // DHT11 sensor type
+DHT dht(DHTPIN, DHTTYPE);
+
+// Wi-Fi and MQTT clients
+WiFiClient wifiClient;
+MqttClient mqttClient(wifiClient);
+
+void setupWiFi() {
+  Serial.print("Connecting to Wi-Fi...");
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print(".");
+  }
+
+  Serial.println("\nConnected to Wi-Fi!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void connectToMqtt() {
+  Serial.print("Connecting to local MQTT broker...");
+  while (!mqttClient.connect(mqtt_server, mqtt_port)) {
+    Serial.print(".");
+    delay(1000);
+  }
+  Serial.println("\nConnected to MQTT broker!");
+}
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+  setupWiFi();
+  connectToMqtt();
+}
+
+void loop() {
+  mqttClient.poll();
+
+  // Read data from DHT11 sensor
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+
+  if (isnan(temperature) || isnan(humidity)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+
+  // Create JSON payload
+  StaticJsonDocument<200> jsonDoc;
+  jsonDoc["sensor"] = "SENG691 DHT11";
+  jsonDoc["temperature"] = temperature;
+  jsonDoc["humidity"] = humidity;
+  jsonDoc["timestamp"] = millis();
+
+  String jsonPayload;
+  serializeJson(jsonDoc, jsonPayload);
+
+  Serial.println("Publishing data to MQTT:");
+  Serial.println(jsonPayload);
+
+  // Publish JSON payload to the topic
+  if (mqttClient.connected()) {
+    mqttClient.beginMessage(mqtt_topic);
+    mqttClient.print(jsonPayload);
+    mqttClient.endMessage();
+    Serial.println("Data published!");
+  } else {
+    Serial.println("MQTT connection lost.");
+    connectToMqtt(); // Attempt reconnection
+  }
+
+  // Wait 30 seconds before sending the next reading
+  delay(30000);
+}
